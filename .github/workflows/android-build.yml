@@ -62,10 +62,12 @@ jobs:
       - name: Collect artifacts
         run: |
           mkdir -p dist
+          # Sanitize the ref name (PR refs look like "2/merge") for use in filenames.
+          version="${GITHUB_REF_NAME//\//-}"
           cp build/app/outputs/flutter-apk/app-release.apk \
-             dist/mf4_viewer-${{ github.ref_name }}.apk
+             "dist/mf4_viewer-${version}.apk"
           cp build/app/outputs/bundle/release/app-release.aab \
-             dist/mf4_viewer-${{ github.ref_name }}.aab
+             "dist/mf4_viewer-${version}.aab"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
