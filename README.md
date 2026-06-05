@@ -91,6 +91,22 @@ flutter build appbundle --release      # Play Store bundle
 Files are opened through the Android Storage Access Framework (the system file
 picker), so no storage permission is required.
 
+#### Download a prebuilt APK
+
+A GitHub Actions pipeline (`.github/workflows/android-build.yml`) builds the
+release APK automatically:
+
+- **Every push / pull request** — the APK and the Play Store bundle (`.aab`) are
+  attached to the workflow run as a downloadable artifact (`mf4_viewer-android`),
+  found on the run's **Summary** page under *Artifacts*.
+- **Tagged releases** (push a tag like `v1.0.0`) — the APK and `.aab` are also
+  published on the repository **[Releases](../../releases)** page for one-click
+  download.
+
+> The release build is currently signed with Flutter's debug keys, so the APK
+> is installable directly. Add a real signing config + secrets before
+> distributing to end users or the Play Store.
+
 ### Windows
 
 ```bash
