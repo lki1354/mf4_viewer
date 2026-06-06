@@ -1,11 +1,13 @@
 name: Android CI/CD
 
-# Builds the Flutter Android app and publishes a downloadable APK.
+# Builds the Flutter Android app and publishes downloadable artifacts.
 #
-# - On every push / PR: builds a release APK and uploads it as a workflow
-#   artifact (downloadable from the run's "Summary" page under "Artifacts").
+# - On every push / PR: builds a release APK + App Bundle and uploads them as a
+#   workflow artifact (downloadable from the run's "Summary" page under
+#   "Artifacts").
 # - On a version tag (e.g. v1.0.0): additionally publishes a GitHub Release
-#   with the APK attached, so it can be downloaded from the repo "Releases" page.
+#   with the artifacts attached, so they can be downloaded from the repo
+#   "Releases" page.
 # - Can also be triggered manually via the "Run workflow" button.
 
 on:
@@ -21,8 +23,8 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build Android APK
+  android:
+    name: Build Android (APK + AAB)
     runs-on: ubuntu-latest
 
     steps:

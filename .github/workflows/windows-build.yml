@@ -1,0 +1,73 @@
+name: Windows CI/CD
+
+# Builds the Flutter Windows app and publishes a downloadable executable.
+#
+# - On every push / PR: builds the release Windows app and uploads it as a
+#   workflow artifact (downloadable from the run's "Summary" page under
+#   "Artifacts").
+# - On a version tag (e.g. v1.0.0): additionally publishes a GitHub Release
+#   with the Windows archive attached.
+# - Can also be triggered manually via the "Run workflow" button.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Allow creating releases / uploading release assets.
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Build Windows (.exe)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Show Flutter version
+        run: flutter --version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build release Windows app
+        run: flutter build windows --release
+
+      # A Flutter Windows build is a folder (the .exe plus DLLs and a data/
+      # directory), so the whole Release folder must be shipped together —
+      # zip it into a single downloadable archive.
+      - name: Package Windows build
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '/', '-'
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive `
+            -Path build/windows/x64/runner/Release/* `
+            -DestinationPath "dist/mf4_viewer-$version-windows-x64.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mf4_viewer-windows
+          path: dist/*.zip
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true
