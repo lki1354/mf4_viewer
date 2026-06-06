@@ -93,8 +93,9 @@ picker), so no storage permission is required.
 
 #### Download prebuilt binaries
 
-A GitHub Actions pipeline (`.github/workflows/ci.yml`) builds the release
-binaries automatically:
+A GitHub Actions setup builds the release binaries automatically — Android in
+`.github/workflows/android-build.yml` and Windows in its own
+`.github/workflows/windows-build.yml`:
 
 - **Every push / pull request** — downloadable from the run's **Summary** page
   under *Artifacts*:
