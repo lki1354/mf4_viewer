@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 
 import '../model/app_state.dart';
 import '../model/plot_config.dart';
+import 'converter_page.dart';
 import 'plot_panel.dart';
 import 'signal_picker.dart';
 
@@ -118,6 +119,11 @@ class _HomePageState extends State<HomePage> {
   List<Widget> _actions(BuildContext context, AppState state) {
     return [
       IconButton(
+        tooltip: 'Convert a CAN log (BLF/TRC/CSV/MDF) to MF4',
+        icon: const Icon(Icons.transform),
+        onPressed: () => _openConverter(context),
+      ),
+      IconButton(
         tooltip: 'Open MF4 file',
         icon: const Icon(Icons.folder_open),
         onPressed: () => _openFile(context),
@@ -206,6 +212,12 @@ class _HomePageState extends State<HomePage> {
               icon: const Icon(Icons.folder_open),
               label: const Text('Open MF4 file'),
             ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () => _openConverter(context),
+              icon: const Icon(Icons.transform),
+              label: const Text('Convert a log to MF4'),
+            ),
             if (state.error != null) ...[
               const SizedBox(height: 16),
               Text(state.error!,
@@ -215,6 +227,12 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
       ),
+    );
+  }
+
+  void _openConverter(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ConverterPage()),
     );
   }
 
