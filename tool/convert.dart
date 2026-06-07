@@ -5,8 +5,11 @@ import 'package:mf4_viewer/src/convert/converter.dart';
 /// Command-line CAN log → MF4 converter.
 ///
 /// Usage:
-///   dart run tool/convert.dart <input.{blf,trc,csv,mf4}> <output.mf4> \
-///       [--db <database.{dbc,arxml}>]
+///
+/// ```
+/// dart run tool/convert.dart <input.{blf,trc,csv,mf4}> <output.mf4> \
+///     [--db <database.{dbc,arxml}>]
+/// ```
 ///
 /// The database (DBC or ARXML) is optional; when supplied it is embedded in the
 /// output MF4 (ARXML is converted to DBC first) so the trace is self-describing.
