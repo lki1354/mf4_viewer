@@ -284,6 +284,11 @@ class _HomePageState extends State<HomePage> {
       fileName: 'mf4_viewer_config.json',
       bytes: bytes,
     );
+    // On desktop `saveFile` only returns the path; it does not write `bytes`.
+    if (path != null &&
+        (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+      await File(path).writeAsBytes(bytes, flush: true);
+    }
     if (!context.mounted) return;
     if (path != null) {
       ScaffoldMessenger.of(context)
