@@ -8,12 +8,13 @@ import '../dbc/dbc_writer.dart';
 import '../mdf/mdf4_reader.dart';
 import 'arxml_parser.dart';
 import 'mf4_writer.dart';
+import 'readers/asc_reader.dart';
 import 'readers/blf_reader.dart';
 import 'readers/csv_reader.dart';
 import 'readers/trc_reader.dart';
 
 /// Supported CAN log input formats.
-enum LogFormat { blf, trc, csv, mf4 }
+enum LogFormat { blf, trc, asc, csv, mf4 }
 
 /// Supported database description input formats.
 enum DbFormat { dbc, arxml }
@@ -67,6 +68,8 @@ class CanConverter {
         return LogFormat.blf;
       case 'trc':
         return LogFormat.trc;
+      case 'asc':
+        return LogFormat.asc;
       case 'csv':
       case 'txt':
       case 'log':
@@ -99,6 +102,8 @@ class CanConverter {
         return BlfReader.read(bytes);
       case LogFormat.trc:
         return TrcReader.readBytes(bytes);
+      case LogFormat.asc:
+        return AscReader.readBytes(bytes);
       case LogFormat.csv:
         return CsvCanReader.readBytes(bytes);
       case LogFormat.mf4:
