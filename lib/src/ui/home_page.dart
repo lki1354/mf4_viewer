@@ -119,7 +119,7 @@ class _HomePageState extends State<HomePage> {
   List<Widget> _actions(BuildContext context, AppState state) {
     return [
       IconButton(
-        tooltip: 'Convert a CAN log (BLF/TRC/CSV/MDF) to MF4',
+        tooltip: 'Convert a CAN log (BLF/TRC/ASC/CSV/MDF) to MF4',
         icon: const Icon(Icons.transform),
         onPressed: () => _openConverter(context),
       ),

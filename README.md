@@ -10,8 +10,8 @@ single Flutter codebase on **Android, Windows and Linux**.
 
 Bring CAN logs from common tools into the self-describing MDF4 format:
 
-- **Inputs:** Vector **BLF**, PEAK **TRC**, generic **CSV**, and existing
-  **MDF/MF4** files.
+- **Inputs:** Vector **BLF**, PEAK **TRC**, PEAK/Vector **ASC** (ASCII trace),
+  generic **CSV**, and existing **MDF/MF4** files.
 - **Database (optional):** a **DBC** or AUTOSAR **ARXML** description. When
   supplied it is embedded in the output `.mf4` (ARXML is converted to DBC
   first), so the resulting trace can be decoded by this viewer and other
@@ -26,11 +26,14 @@ unit-tested in isolation and reusable from a CLI.
 
 Tap the **convert** (⇄) action in the toolbar (or **Convert a log to MF4** on
 the welcome screen), pick a log and an optional database, and save the `.mf4`.
+After a successful conversion the **Plot converted file** button loads the new
+trace straight into the viewer (attach a DBC/ARXML so its signals can be
+decoded).
 
 ### From the command line
 
 ```bash
-dart run tool/convert.dart <input.{blf,trc,csv,mf4}> <output.mf4> \
+dart run tool/convert.dart <input.{blf,trc,asc,csv,mf4}> <output.mf4> \
     [--db <database.{dbc,arxml}>]
 
 # e.g.
@@ -51,6 +54,21 @@ auto-detected). Recognised columns (case-insensitive):
 | `DLC` / `Length`                    | payload length (else the byte count)               |
 | `Data` / `Data Bytes`               | hex payload, spaced (`11 22`) or contiguous        |
 | `D0..D7` / `Byte0..` / `Data0..`    | one payload byte per column (alternative to `Data`)|
+
+#### ASC input format
+
+The ASC reader handles the PEAK PCAN-View / Vector ASCII trace (`.asc`) layout,
+both classic CAN and CAN-FD, with a tolerant tokeniser:
+
+```
+classic: <time> <chan> <id>[x] <Rx|Tx> d <dlc> <b0 b1 …>
+CAN-FD:  <time> CANFD <chan> <Rx|Tx> <id>[x] [name] <brs> <esi> <dlc> <len> <b0 …>
+```
+
+Timestamps are absolute seconds. Numbers default to hex; a `base dec` header
+switches ids and payload bytes to decimal. A trailing `x` on the id (or an
+11-bit overflow) marks an extended frame. Remote, error, statistic and trigger
+lines are skipped.
 
 > ARXML support targets AUTOSAR 4.x system / ECU-extract descriptions; Motorola
 > (big-endian) start-bit numbering is taken verbatim, so prefer Intel
@@ -95,7 +113,7 @@ lib/src/
   dbc/dbc_parser.dart      Textual DBC parser (BO_ / SG_ / VAL_)
   dbc/dbc_writer.dart      DBC serializer (used to embed ARXML-sourced databases)
   convert/frame_builder.dart  Canonical CAN frame accumulator
-  convert/readers/         BLF, TRC and CSV log readers
+  convert/readers/         BLF, TRC, ASC and CSV log readers
   convert/arxml_parser.dart   AUTOSAR ARXML -> DBC database
   convert/mf4_writer.dart  ASAM MDF 4.10 bus-logging writer
   convert/converter.dart   Format detection + log -> MF4 pipeline
@@ -127,7 +145,7 @@ flutter test
 
 The converter has its own suite (`test/convert_test.dart`): the MF4 writer is
 round-tripped back through the reader, each input reader (BLF — including a
-zlib `LOG_CONTAINER`, TRC, CSV) is checked against fixtures, and the
+zlib `LOG_CONTAINER`, TRC, ASC, CSV) is checked against fixtures, and the
 ARXML → DBC path is validated.
 
 A standalone CLI verifier is also provided:

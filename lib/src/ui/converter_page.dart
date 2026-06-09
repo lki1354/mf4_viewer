@@ -3,11 +3,14 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../convert/converter.dart';
+import '../model/app_state.dart';
 
-/// A self-contained screen that converts a CAN log (BLF / TRC / CSV / MDF) to
-/// an ASAM MDF4 (`.mf4`) file, optionally embedding a DBC or ARXML database.
+/// A self-contained screen that converts a CAN log (BLF / TRC / ASC / CSV /
+/// MDF) to an ASAM MDF4 (`.mf4`) file, optionally embedding a DBC or ARXML
+/// database. The converted file can be saved and/or plotted straight away.
 class ConverterPage extends StatefulWidget {
   const ConverterPage({super.key});
 
@@ -28,6 +31,10 @@ class _ConverterPageState extends State<ConverterPage> {
   String? _status;
   bool _error = false;
 
+  // Holds the most recent successful conversion so it can be plotted directly.
+  Uint8List? _convertedBytes;
+  String? _convertedName;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -45,16 +52,17 @@ class _ConverterPageState extends State<ConverterPage> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Input formats: BLF, TRC, CSV and MDF/MF4. Attach a DBC or '
-                'ARXML database to embed it in the output so the trace is '
-                'self-describing.',
+                'Input formats: BLF, TRC, ASC (PCAN/Vector ASCII), CSV and '
+                'MDF/MF4. Attach a DBC or ARXML database to embed it in the '
+                'output so the trace is self-describing — then plot it straight '
+                'away.',
                 style: theme.textTheme.bodyMedium,
               ),
               const SizedBox(height: 24),
               _fileTile(
                 label: 'CAN log',
                 file: _log,
-                hint: 'Pick a .blf / .trc / .csv / .mf4 file',
+                hint: 'Pick a .blf / .trc / .asc / .csv / .mf4 file',
                 icon: Icons.timeline,
                 onPick: _pickLog,
                 onClear: () => setState(() => _log = null),
@@ -80,6 +88,14 @@ class _ConverterPageState extends State<ConverterPage> {
                     : const Icon(Icons.transform),
                 label: Text(_busy ? 'Converting…' : 'Convert & save MF4'),
               ),
+              if (_convertedBytes != null) ...[
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : _plotConverted,
+                  icon: const Icon(Icons.show_chart),
+                  label: const Text('Plot converted file'),
+                ),
+              ],
               if (_status != null) ...[
                 const SizedBox(height: 20),
                 Card(
@@ -143,8 +159,16 @@ class _ConverterPageState extends State<ConverterPage> {
   }
 
   Future<void> _pickLog() async {
-    final picked = await _pick(['blf', 'trc', 'csv', 'txt', 'log', 'mf4', 'mdf']);
-    if (picked != null) setState(() => _log = picked);
+    final picked = await _pick(
+        ['blf', 'trc', 'asc', 'csv', 'txt', 'log', 'mf4', 'mdf']);
+    if (picked != null) {
+      setState(() {
+        _log = picked;
+        // A new input invalidates any previously converted result.
+        _convertedBytes = null;
+        _convertedName = null;
+      });
+    }
   }
 
   Future<void> _pickDb() async {
@@ -175,19 +199,44 @@ class _ConverterPageState extends State<ConverterPage> {
       if (!mounted) return;
       setState(() {
         _error = false;
+        _convertedBytes = result.mf4Bytes;
+        _convertedName = outName;
         _status = path == null
-            ? '${result.summary()}\nSave cancelled.'
+            ? '${result.summary()}\nNot saved — you can still plot it below.'
             : '${result.summary()}\nSaved to $path';
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = true;
+        _convertedBytes = null;
+        _convertedName = null;
         _status = 'Conversion failed: $e';
       });
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// Load the freshly converted MF4 into the app and return to the viewer to
+  /// plot it. Requires an embedded database (attach a DBC/ARXML) to decode.
+  Future<void> _plotConverted() async {
+    final bytes = _convertedBytes;
+    final name = _convertedName;
+    if (bytes == null || name == null) return;
+
+    final state = context.read<AppState>();
+    await state.loadFile(bytes, name);
+    if (!mounted) return;
+
+    if (state.error != null) {
+      setState(() {
+        _error = true;
+        _status = 'Cannot plot: ${state.error}';
+      });
+      return;
+    }
+    Navigator.of(context).pop();
   }
 
   static String _stem(String name) {

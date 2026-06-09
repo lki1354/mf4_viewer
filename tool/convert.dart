@@ -7,7 +7,7 @@ import 'package:mf4_viewer/src/convert/converter.dart';
 /// Usage:
 ///
 /// ```
-/// dart run tool/convert.dart <input.{blf,trc,csv,mf4}> <output.mf4> \
+/// dart run tool/convert.dart <input.{blf,trc,asc,csv,mf4}> <output.mf4> \
 ///     [--db <database.{dbc,arxml}>]
 /// ```
 ///
@@ -61,7 +61,7 @@ void main(List<String> args) {
 
 void _usage() {
   stdout.writeln(
-    'Usage: dart run tool/convert.dart <input.{blf,trc,csv,mf4}> '
+    'Usage: dart run tool/convert.dart <input.{blf,trc,asc,csv,mf4}> '
     '<output.mf4> [--db <database.{dbc,arxml}>]',
   );
 }

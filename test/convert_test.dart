@@ -7,6 +7,7 @@ import 'package:mf4_viewer/src/convert/arxml_parser.dart';
 import 'package:mf4_viewer/src/convert/converter.dart';
 import 'package:mf4_viewer/src/convert/frame_builder.dart';
 import 'package:mf4_viewer/src/convert/mf4_writer.dart';
+import 'package:mf4_viewer/src/convert/readers/asc_reader.dart';
 import 'package:mf4_viewer/src/convert/readers/blf_reader.dart';
 import 'package:mf4_viewer/src/convert/readers/csv_reader.dart';
 import 'package:mf4_viewer/src/convert/readers/trc_reader.dart';
@@ -119,6 +120,55 @@ void main() {
     });
   });
 
+  group('ASC reader', () {
+    test('classic CAN with header, standard and extended ids', () {
+      const asc = 'date Wed Sep 30 14:00:00.000 2020\n'
+          'base hex  timestamps absolute\n'
+          'internal events logged\n'
+          '// version 13.0.0\n'
+          'Begin Triggerblock Wed Sep 30 14:00:00.000 2020\n'
+          '   0.000000 Start of measurement\n'
+          '   0.001000 1  300             Rx   d 8 01 02 03 04 05 06 07 08\n'
+          '   0.002000 1  18FEF100x       Tx   d 4 AA BB CC DD\n'
+          '   0.003000 1  200             Rx   r 0\n'
+          '   0.004000 1  ErrorFrame\n'
+          'End Triggerblock\n';
+      final f = AscReader.read(asc);
+      // Two data frames; the remote and error frames are skipped.
+      expect(f.count, 2);
+      expect(f.time[0], closeTo(0.001, 1e-9));
+      expect(f.id[0], 0x300);
+      expect(f.ide[0], 0);
+      expect(f.length[0], 8);
+      expect(f.dataBytesView(0), [1, 2, 3, 4, 5, 6, 7, 8]);
+      expect(f.id[1], 0x18FEF100);
+      expect(f.ide[1], 1);
+      expect(f.length[1], 4);
+      expect(f.dataBytesView(1), [0xAA, 0xBB, 0xCC, 0xDD]);
+    });
+
+    test('CAN-FD line with a symbolic name', () {
+      const asc = '   0.001000 CANFD   1 Rx 18EBFF00x  J1939TP 1 0 a 10 '
+          '01 02 03 04 05 06 07 08 09 0A  100000 0 0 0 0 0\n';
+      final f = AscReader.read(asc);
+      expect(f.count, 1);
+      expect(f.id[0], 0x18EBFF00);
+      expect(f.ide[0], 1);
+      expect(f.length[0], 10);
+      expect(f.dataBytesView(0),
+          [1, 2, 3, 4, 5, 6, 7, 8, 9, 0x0A]);
+    });
+
+    test('base dec switches id and payload to decimal', () {
+      const asc = 'base dec  timestamps absolute\n'
+          '   0.001000 1  256             Rx   d 2 17 34\n';
+      final f = AscReader.read(asc);
+      expect(f.count, 1);
+      expect(f.id[0], 256);
+      expect(f.dataBytesView(0), [17, 34]);
+    });
+  });
+
   group('BLF reader', () {
     test('classic + FD frames inside a zlib container, plus a top-level frame', () {
       final container = _blfContainer([
@@ -213,6 +263,7 @@ void main() {
     test('format detection by extension', () {
       expect(CanConverter.detectLogFormat('a.blf'), LogFormat.blf);
       expect(CanConverter.detectLogFormat('a.trc'), LogFormat.trc);
+      expect(CanConverter.detectLogFormat('a.asc'), LogFormat.asc);
       expect(CanConverter.detectLogFormat('a.csv'), LogFormat.csv);
       expect(CanConverter.detectLogFormat('a.mf4'), LogFormat.mf4);
       expect(() => CanConverter.detectLogFormat('a.png'), throwsFormatException);
