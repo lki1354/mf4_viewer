@@ -9,9 +9,11 @@ import '../frame_builder.dart';
 /// ASCII") and the Vector CANalyzer/CANoe tool-chain. A tolerant tokeniser
 /// handles both the classic-CAN and the CAN-FD line layouts:
 ///
-///   classic: `<time> <chan> <id>[x] <Rx|Tx> d <dlc> <b0 b1 …>`
-///   CAN-FD:  `<time> CANFD <chan> <Rx|Tx> <id>[x] [name] <brs> <esi> <dlc>
-///             <len> <b0 b1 …> …`
+/// ```
+/// classic: <time> <chan> <id>[x] <Rx|Tx> d <dlc> <b0 b1 …>
+/// CAN-FD:  <time> CANFD <chan> <Rx|Tx> <id>[x] [name] <brs> <esi> <dlc>
+///          <len> <b0 b1 …> …
+/// ```
 ///
 /// Timestamps are absolute seconds (the ASC convention). Numbers default to
 /// hexadecimal; a `base dec` header switches ids and payload bytes to decimal.
@@ -93,8 +95,8 @@ class AscReader {
     );
   }
 
-  /// `<time> CANFD <chan> <Rx|Tx> <id>[x] [name] <brs> <esi> <dlc> <len>
-  ///  <bytes…> …`
+  /// Parses a CAN-FD line:
+  /// `<time> CANFD <chan> <dir> <id>[x] [name] <brs> <esi> <dlc> <len> <bytes…>`
   static _AscFrame? _parseFd(List<String> t, int radix) {
     if (t.length < 9) return null;
     // t[0]=time, t[1]=CANFD, t[2]=channel, t[3]=dir, t[4]=id.
