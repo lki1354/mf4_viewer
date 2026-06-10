@@ -196,6 +196,12 @@ class _ConverterPageState extends State<ConverterPage> {
         fileName: outName,
         bytes: result.mf4Bytes,
       );
+      // On desktop platforms `saveFile` only returns the chosen path and does
+      // not write `bytes` to disk — that only happens on mobile/web. Write the
+      // file ourselves so the conversion is actually persisted.
+      if (path != null && _isDesktop) {
+        await File(path).writeAsBytes(result.mf4Bytes, flush: true);
+      }
       if (!mounted) return;
       setState(() {
         _error = false;
@@ -238,6 +244,9 @@ class _ConverterPageState extends State<ConverterPage> {
     }
     Navigator.of(context).pop();
   }
+
+  static bool get _isDesktop =>
+      Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
   static String _stem(String name) {
     final base = name.split('/').last.split(r'\').last;
