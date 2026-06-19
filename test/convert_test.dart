@@ -118,6 +118,28 @@ void main() {
       expect(f.length[0], 8);
       expect(f.dataBytesView(0), [1, 2, 3, 4, 5, 6, 7, 8]);
     });
+
+    test('PEAK 1.1 layout with the direction in the type column', () {
+      // Some 1.1 generators (e.g. DENS Kano) put Rx/Tx *before* the ID, in the
+      // "Type" column. Extended (29-bit) ids are written with 8 hex digits.
+      const trc = ';\$FILEVERSION=1.1\n'
+          ';\$STARTTIME=46189.6326979066\n'
+          ';   Message Number\n'
+          ';---+--   ----+----  --+--  ----+---  +  -+ -- --\n'
+          '     1)         0.0  Rx     10062103  6  D4 AF 91 13 21 80 \n'
+          '     2)         0.3  Tx     0300      3  01 02 03 \n';
+      final f = TrcReader.read(trc);
+      expect(f.count, 2);
+      expect(f.time[0], closeTo(0.0, 1e-9));
+      expect(f.id[0], 0x10062103);
+      expect(f.ide[0], 1);
+      expect(f.length[0], 6);
+      expect(f.dataBytesView(0), [0xD4, 0xAF, 0x91, 0x13, 0x21, 0x80]);
+      expect(f.time[1], closeTo(0.0003, 1e-9));
+      expect(f.id[1], 0x300);
+      expect(f.ide[1], 0);
+      expect(f.dataBytesView(1), [0x01, 0x02, 0x03]);
+    });
   });
 
   group('ASC reader', () {

@@ -5,17 +5,46 @@ import '../frame_builder.dart';
 
 /// Reads CAN frames from a PEAK PCAN-View trace (`.trc`) file.
 ///
-/// Both the older 1.x and the column-richer 2.x layouts are handled by a single
-/// tolerant tokeniser:
+/// The various PEAK layouts differ in where the direction (`Rx`/`Tx`) and the
+/// frame type (`DT`/`FD`/…) columns sit relative to the ID. A single tolerant
+/// tokeniser handles all of them:
 ///
-///   `<msg#>)  <time-ms>  [<type>]  <id-hex>  [Rx|Tx]  [-]  <dlc>  <b0 b1 …>`
+///   `<msg#>)  <time-ms>  [Rx|Tx|type…]  <id-hex>  [Rx|Tx|type…]  [-]  <dlc>  <b0 b1 …>`
 ///
-/// Only data frames (`DT`/`FD`, or 1.x rows without an explicit type) yield
-/// frames; remote/error/status rows are skipped. Timestamps are the PEAK
-/// millisecond offset, converted to seconds.
+/// In particular:
+///   * 2.x:                 `… DT  <id>  Rx -  <dlc> …`  (type before, dir after)
+///   * 1.1 (DENS Kano etc): `… Rx  <id>  <dlc> …`        (dir in the type column,
+///                                                         i.e. *before* the ID)
+///   * plain 1.x:           `… <id>  <dlc> …`            (no type/dir column)
+///
+/// Only data frames (`DT`/`FD`, or rows without an explicit type) yield frames;
+/// remote/error/status rows are skipped. Timestamps are the PEAK millisecond
+/// offset, converted to seconds.
 class TrcReader {
   static final _typeRe = RegExp(r'^(DT|FD|RR|ER|ST|EC|BS|MC)$', caseSensitive: false);
   static const _dataTypes = {'DT', 'FD'};
+
+  /// Consumes any consecutive direction (`Rx`/`Tx`) or frame-type tokens at
+  /// [idx]. Returns the new index, and whether a *non-data* frame type was seen
+  /// (in which case the caller should skip the whole row).
+  static (int, bool) _consumeTypeDir(List<String> tokens, int idx) {
+    var skip = false;
+    while (idx < tokens.length) {
+      final t = tokens[idx];
+      final lower = t.toLowerCase();
+      if (lower == 'rx' || lower == 'tx') {
+        idx++;
+        continue;
+      }
+      if (_typeRe.hasMatch(t)) {
+        if (!_dataTypes.contains(t.toUpperCase())) skip = true;
+        idx++;
+        continue;
+      }
+      break;
+    }
+    return (idx, skip);
+  }
 
   static CanFrameTable read(String text) {
     final fb = FrameBuilder();
@@ -33,13 +62,11 @@ class TrcReader {
       if (time == null) continue;
       idx++;
 
-      // Optional frame type (DT/FD/…). Skip non-data frames entirely.
-      String? type;
-      if (idx < tokens.length && _typeRe.hasMatch(tokens[idx])) {
-        type = tokens[idx].toUpperCase();
-        idx++;
-        if (!_dataTypes.contains(type)) continue;
-      }
+      // Optional direction/type columns that precede the ID (1.1 puts the
+      // direction here; 2.x puts the frame type here). Skip non-data frames.
+      var skip = false;
+      (idx, skip) = _consumeTypeDir(tokens, idx);
+      if (skip) continue;
 
       if (idx >= tokens.length) continue;
       final idTok = tokens[idx];
@@ -49,12 +76,10 @@ class TrcReader {
       final extended = idTok.length > 4 || id > 0x7FF;
       idx++;
 
-      // Optional direction (Rx/Tx) and a reserved '-' placeholder (2.x).
-      if (idx < tokens.length &&
-          (tokens[idx].toLowerCase() == 'rx' ||
-              tokens[idx].toLowerCase() == 'tx')) {
-        idx++;
-      }
+      // Optional direction/type columns that follow the ID (2.x), plus the
+      // reserved '-' placeholder.
+      (idx, skip) = _consumeTypeDir(tokens, idx);
+      if (skip) continue;
       if (idx < tokens.length && tokens[idx] == '-') idx++;
 
       if (idx >= tokens.length) continue;
