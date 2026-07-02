@@ -187,7 +187,10 @@ class Mf4Writer {
       cn.u8(0); // bit offset
       cn.u32(c.byteOffset);
       cn.u32(c.bitCount);
-      // remaining 56 bytes (flags, inval pos, precision, ranges…) left zero.
+      // Remaining 60 bytes (flags, inval pos, precision, ranges…) stay zero,
+      // but must still count into the declared block length or strict readers
+      // (asammdf, CANape) reject the channel block as truncated.
+      cn.skip(60);
     }
 
     // DT: raw records. No links; length must not include padding.

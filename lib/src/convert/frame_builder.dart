@@ -47,7 +47,12 @@ class FrameBuilder {
     final n = _time.length;
     final order = List<int>.generate(n, (i) => i);
     if (sort) {
-      order.sort((a, b) => _time[a].compareTo(_time[b]));
+      // Tie-break on the original index so frames sharing a timestamp keep
+      // their log order (List.sort is not stable).
+      order.sort((a, b) {
+        final byTime = _time[a].compareTo(_time[b]);
+        return byTime != 0 ? byTime : a.compareTo(b);
+      });
     }
 
     var stride = 8;

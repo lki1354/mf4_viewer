@@ -203,6 +203,73 @@ void main() {
 
       expect(f.dataBytesView(byId[0x55]!), [0xFF]);
     });
+
+    test('CAN_FD_MESSAGE_64 events (written by current Vector tools)', () {
+      final container = _blfContainer([
+        _blfFd64(
+            timestampRaw: 100,
+            channel: 2,
+            arbId: 0x601,
+            data: List<int>.generate(24, (i) => i + 1)),
+        _blfFd64(
+            timestampRaw: 200,
+            channel: 2,
+            arbId: 0x18DAF110 | 0x80000000,
+            data: [0xAA, 0xBB]),
+      ]);
+      final f = BlfReader.read(_blfFile([container]));
+
+      expect(f.count, 2);
+      expect(f.time[0], closeTo(0.001, 1e-9));
+      expect(f.id[0], 0x601);
+      expect(f.ide[0], 0);
+      expect(f.length[0], 24);
+      expect(f.dataBytesView(0), List<int>.generate(24, (i) => i + 1));
+
+      expect(f.id[1], 0x18DAF110);
+      expect(f.ide[1], 1);
+      expect(f.dataBytesView(1), [0xAA, 0xBB]);
+    });
+
+    test('an event split across two log containers is reassembled', () {
+      final events = [
+        _blfClassic(timestampRaw: 100, channel: 1, arbId: 0x101, data: [1]),
+        _blfClassic(timestampRaw: 200, channel: 1, arbId: 0x102, data: [2]),
+        _blfClassic(timestampRaw: 300, channel: 1, arbId: 0x103, data: [3]),
+      ];
+      final raw = _concat(events.map(_pad4).toList());
+      // Cut mid-way through the second event; the decompressed container
+      // payloads form one continuous stream, so the reader must stitch the
+      // halves back together.
+      final cut = 48 + 20;
+      final blf = _blfFile([
+        _blfContainerRaw(Uint8List.sublistView(raw, 0, cut)),
+        _blfContainerRaw(Uint8List.sublistView(raw, cut)),
+      ]);
+      final f = BlfReader.read(blf);
+
+      expect(f.count, 3);
+      expect(f.id, [0x101, 0x102, 0x103]);
+      expect(f.dataBytesView(1), [2]);
+    });
+
+    test('objects padded to objectSize % 4 (Vector convention) are found', () {
+      // 49-byte object: one data byte beyond the classic 48-byte layout so
+      // the object size is not 4-aligned; Vector pads with objectSize % 4
+      // bytes rather than rounding up to the next 4-byte boundary.
+      final odd = Uint8List(49 + 1); // 49-byte object + 1 padding byte
+      odd.setAll(0, _blfClassic(
+          timestampRaw: 100, channel: 1, arbId: 0x77, data: [5]));
+      final bd = ByteData.sublistView(odd);
+      bd.setUint32(8, 49, Endian.little); // object size
+      final follower =
+          _blfClassic(timestampRaw: 200, channel: 1, arbId: 0x78, data: [6]);
+
+      final f = BlfReader.read(
+          _blfFile([_blfContainerRaw(_concat([odd, follower]))]));
+      expect(f.count, 2);
+      expect(f.id, [0x77, 0x78]);
+    });
   });
 
   group('ARXML parser', () {
@@ -297,8 +364,10 @@ Uint8List _blfFile(List<Uint8List> objects) {
 }
 
 /// Wrap [events] in a zlib-compressed LOG_CONTAINER (object type 10).
-Uint8List _blfContainer(List<Uint8List> events) {
-  final raw = _concat(events.map(_pad4).toList());
+Uint8List _blfContainer(List<Uint8List> events) =>
+    _blfContainerRaw(_concat(events.map(_pad4).toList()));
+
+Uint8List _blfContainerRaw(Uint8List raw) {
   final compressed =
       Uint8List.fromList(ZLibCodec().encoder.convert(raw));
   final size = 16 + 16 + compressed.length;
@@ -339,7 +408,7 @@ Uint8List _blfFd({
   required int arbId,
   required List<int> data,
 }) {
-  const size = 112;
+  const size = 116; // 32 header + 20 fixed fields + 64 data
   final out = Uint8List(size);
   final bd = ByteData.sublistView(out);
   _blfBaseAndV1(out, bd, headerSize: 32, objectSize: size, objectType: 100, timestampRaw: timestampRaw);
@@ -351,8 +420,33 @@ Uint8List _blfFd({
   out[44] = 0; // arb bit count
   out[45] = 0; // fd flags
   out[46] = data.length; // valid data bytes
-  out[47] = 0; // reserved
-  out.setRange(48, 48 + data.length, data);
+  // 47..51 reserved
+  out.setRange(52, 52 + data.length, data);
+  return out;
+}
+
+Uint8List _blfFd64({
+  required int timestampRaw,
+  required int channel,
+  required int arbId,
+  required List<int> data,
+}) {
+  final size = 32 + 40 + data.length; // header + fixed fields + payload
+  final out = Uint8List(size);
+  final bd = ByteData.sublistView(out);
+  _blfBaseAndV1(out, bd, headerSize: 32, objectSize: size, objectType: 101, timestampRaw: timestampRaw);
+  out[32] = channel;
+  out[33] = 0; // dlc code (unused by reader)
+  out[34] = data.length; // valid data bytes
+  out[35] = 0; // tx count
+  bd.setUint32(36, arbId, Endian.little);
+  // frameLength, flags, btrCfgArb, btrCfgData, timeOffsetBrs,
+  // timeOffsetCrcDel (offsets 40..63) left zero.
+  bd.setUint16(64, 0, Endian.little); // bit count
+  out[66] = 0; // dir
+  out[67] = 0; // extDataOffset (payload runs to end of object)
+  bd.setUint32(68, 0, Endian.little); // crc
+  out.setRange(72, 72 + data.length, data);
   return out;
 }
 
