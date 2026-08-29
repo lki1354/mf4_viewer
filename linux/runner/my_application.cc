@@ -14,6 +14,23 @@ struct _MyApplication {
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
+// Loads the application icon shipped next to the executable (data/icon.png).
+// When the app is installed with its .desktop file the desktop environment
+// picks the icon up from the icon theme instead; this covers running the
+// relocatable bundle straight out of the archive.
+static void set_default_icon() {
+  g_autofree gchar* executable = g_file_read_link("/proc/self/exe", nullptr);
+  if (executable == nullptr) {
+    return;
+  }
+  g_autofree gchar* directory = g_path_get_dirname(executable);
+  g_autofree gchar* icon = g_build_filename(directory, "data", "icon.png", nullptr);
+  g_autoptr(GError) error = nullptr;
+  if (!gtk_window_set_default_icon_from_file(icon, &error)) {
+    g_warning("Failed to load application icon %s: %s", icon, error->message);
+  }
+}
+
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView *view)
 {
@@ -46,11 +63,11 @@ static void my_application_activate(GApplication* application) {
   if (use_header_bar) {
     GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
     gtk_widget_show(GTK_WIDGET(header_bar));
-    gtk_header_bar_set_title(header_bar, "mf4_viewer");
+    gtk_header_bar_set_title(header_bar, "MF4 Viewer");
     gtk_header_bar_set_show_close_button(header_bar, TRUE);
     gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
   } else {
-    gtk_window_set_title(window, "mf4_viewer");
+    gtk_window_set_title(window, "MF4 Viewer");
   }
 
   gtk_window_set_default_size(window, 1280, 720);
@@ -99,7 +116,7 @@ static gboolean my_application_local_command_line(GApplication* application, gch
 static void my_application_startup(GApplication* application) {
   //MyApplication* self = MY_APPLICATION(object);
 
-  // Perform any actions required at application startup.
+  set_default_icon();
 
   G_APPLICATION_CLASS(my_application_parent_class)->startup(application);
 }

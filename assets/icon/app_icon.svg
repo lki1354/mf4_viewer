@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>MF4 Viewer</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4A5CC7"/>
+      <stop offset="1" stop-color="#1A237E"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="225" fill="url(#bg)"/>
+  <path d="M 153.6 665.6 L 297.0 665.6 L 297.0 358.4 L 440.3 358.4 L 440.3 665.6 L 583.7 665.6 L 583.7 358.4 L 727.0 358.4 L 727.0 665.6 L 870.4 665.6" fill="none" stroke="#FFFFFF" stroke-width="87"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

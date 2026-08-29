@@ -1,3 +1,5 @@
+<img src="assets/icon/app_icon.png" alt="MF4 Viewer icon" width="96" align="right">
+
 # MF4 Viewer &amp; Converter
 
 A cross-platform tool for **ASAM MDF4 (`.mf4`) CAN trace logs** that both
@@ -192,13 +194,15 @@ build for every platform (all builds depend on the tests passing).
   `main` and on every merge/push to `main`. The binaries are downloadable from
   the run's **Summary** page under *Artifacts* (kept 14 days):
   - `mf4_viewer-android` — the Android APK and Play Store bundle (`.aab`)
-  - `mf4_viewer-windows` — a zipped Windows x64 build (the `.exe` plus its
-    required DLLs and `data/` folder)
-  - `mf4_viewer-linux` — a tarred Linux x64 bundle
+  - `mf4_viewer-windows` — the Windows x64 **installer** (`…-setup.exe`) and a
+    portable `.zip` of the same build
+  - `mf4_viewer-linux` — a tarred Linux x64 bundle with an `install.sh` for
+    desktop integration
 - **Release** (`.github/workflows/release.yml`) — triggered by pushing a
   version tag; it rebuilds everything from the tagged commit and publishes the
-  APK, `.aab`, the Windows `.zip` and the Linux `.tar.gz` on the repository's
-  **[Releases](../../releases)** page, with auto-generated release notes:
+  APK, `.aab`, the Windows installer and `.zip` and the Linux `.tar.gz` on the
+  repository's **[Releases](../../releases)** page, with auto-generated release
+  notes:
 
   ```bash
   git tag -a v1.0.0 -m "v1.0.0"
@@ -208,8 +212,14 @@ build for every platform (all builds depend on the tests passing).
   A tag containing a hyphen (e.g. `v1.1.0-rc.1`) is published as a
   pre-release.
 
-> To run the Windows build, extract the `.zip` and launch `mf4_viewer.exe` —
-> keep the accompanying DLLs and `data/` folder next to it.
+> On Windows, run the `…-setup.exe` for a normal installation (Start menu
+> entry, uninstaller, no admin rights needed). The `.zip` is the portable
+> alternative: extract it and launch `mf4_viewer.exe` — keep the accompanying
+> DLLs and `data/` folder next to it.
+
+> On Linux, extract the `.tar.gz` and run the app in place
+> (`./mf4_viewer`), or run `./install.sh` inside it to add a launcher and icon
+> to the application menu (see below).
 
 > The Android release build is currently signed with Flutter's debug keys, so
 > the APK is installable directly. Add a real signing config + secrets before
@@ -221,11 +231,48 @@ build for every platform (all builds depend on the tests passing).
 flutter build windows --release
 ```
 
+The result is a portable folder (`build/windows/x64/runner/Release`). To wrap
+it in an installer, compile the [Inno Setup](https://jrsoftware.org/isdl.php) 6
+script that lives next to it:
+
+```bat
+iscc windows\packaging\mf4_viewer.iss
+```
+
+That writes `dist\mf4_viewer-<version>-windows-x64-setup.exe`: a per-user
+install by default (no admin rights, with an "all users" option in the wizard),
+a Start menu entry, an optional desktop shortcut and an uninstaller. CI passes
+the version and output name in with `/D` defines — see the header of the
+`.iss`.
+
 ### Linux
 
 ```bash
 sudo apt install clang cmake ninja-build pkg-config libgtk-3-dev   # build deps
 flutter build linux --release
+```
+
+The relocatable bundle in `build/linux/x64/release/bundle` runs from wherever
+it is extracted (`./mf4_viewer`) and carries its own icon. To integrate it with
+the desktop — a `mf4-viewer` command, an icon in the hicolor theme and a
+`.desktop` entry in the application menu — run the bundled script:
+
+```bash
+./install.sh              # into ~/.local
+sudo ./install.sh /usr/local   # system-wide
+./uninstall.sh            # removes it again (same prefix)
+```
+
+### App icon
+
+All platform icons (Android launcher including the adaptive/monochrome layers,
+the Windows `.ico`, the Linux hicolor set and the 1024px master) are generated
+from one definition in `tool/gen_icons.py`. The rendered files are committed,
+so a normal build needs nothing extra; after changing the definition run:
+
+```bash
+python3 -m pip install pillow
+python3 tool/gen_icons.py
 ```
 
 ### Auto-load (automation / demos)
