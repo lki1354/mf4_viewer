@@ -184,19 +184,29 @@ picker), so no storage permission is required.
 
 #### Download prebuilt binaries
 
-A single GitHub Actions pipeline (`.github/workflows/release.yml`) runs
-`flutter analyze` + `flutter test` and then builds every platform artifact (all
-builds depend on the tests passing):
+Two GitHub Actions pipelines share the same build definition
+(`.github/workflows/_build.yml`): `flutter analyze` + `flutter test`, then a
+build for every platform (all builds depend on the tests passing).
 
-- **Every push / pull request** — downloadable from the run's **Summary** page
-  under *Artifacts*:
+- **CI** (`.github/workflows/ci.yml`) — runs on every pull request against
+  `main` and on every merge/push to `main`. The binaries are downloadable from
+  the run's **Summary** page under *Artifacts* (kept 14 days):
   - `mf4_viewer-android` — the Android APK and Play Store bundle (`.aab`)
   - `mf4_viewer-windows` — a zipped Windows x64 build (the `.exe` plus its
     required DLLs and `data/` folder)
   - `mf4_viewer-linux` — a tarred Linux x64 bundle
-- **Tagged releases** (push a tag like `v1.0.0`) — the APK, `.aab`, the Windows
-  `.zip` and the Linux `.tar.gz` are also published on the repository
-  **[Releases](../../releases)** page for one-click download.
+- **Release** (`.github/workflows/release.yml`) — triggered by pushing a
+  version tag; it rebuilds everything from the tagged commit and publishes the
+  APK, `.aab`, the Windows `.zip` and the Linux `.tar.gz` on the repository's
+  **[Releases](../../releases)** page, with auto-generated release notes:
+
+  ```bash
+  git tag -a v1.0.0 -m "v1.0.0"
+  git push origin v1.0.0
+  ```
+
+  A tag containing a hyphen (e.g. `v1.1.0-rc.1`) is published as a
+  pre-release.
 
 > To run the Windows build, extract the `.zip` and launch `mf4_viewer.exe` —
 > keep the accompanying DLLs and `data/` folder next to it.

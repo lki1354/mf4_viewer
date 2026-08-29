@@ -1,0 +1,139 @@
+name: Build
+
+# Reusable build definition shared by the CI (`ci.yml`) and release
+# (`release.yml`) pipelines, so both run exactly the same checks and produce
+# exactly the same artifacts:
+#
+#   * test    — `flutter analyze` + `flutter test`. Every build job depends on
+#               it passing.
+#   * android — release APK + Play Store App Bundle (.aab)
+#   * windows — zipped Windows x64 build (.exe + DLLs + data/)
+#   * linux   — tarred Linux x64 bundle
+#
+# Artifacts are uploaded to the calling run, where they can be downloaded from
+# the Summary page or picked up by a follow-up job (see `release.yml`).
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Label embedded in the artifact file names (tag, branch, pr-N).
+        required: true
+        type: string
+      retention-days:
+        description: How long the uploaded artifacts are kept.
+        required: false
+        default: 14
+        type: number
+
+env:
+  FLUTTER_CHANNEL: stable
+
+jobs:
+  test:
+    name: Analyze & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+      - run: flutter --version
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+  android:
+    name: Android (APK + AAB)
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+      - run: flutter pub get
+      - run: flutter build apk --release
+      - run: flutter build appbundle --release
+      - name: Collect artifacts
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          mkdir -p dist
+          version="${VERSION//\//-}"
+          cp build/app/outputs/flutter-apk/app-release.apk \
+             "dist/mf4_viewer-${version}.apk"
+          cp build/app/outputs/bundle/release/app-release.aab \
+             "dist/mf4_viewer-${version}.aab"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mf4_viewer-android
+          path: dist/*
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention-days }}
+
+  windows:
+    name: Windows (x64)
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+      - run: flutter pub get
+      - run: flutter build windows --release
+      - name: Package Windows build
+        shell: pwsh
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          $version = $env:VERSION -replace '/', '-'
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive `
+            -Path build/windows/x64/runner/Release/* `
+            -DestinationPath "dist/mf4_viewer-$version-windows-x64.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mf4_viewer-windows
+          path: dist/*.zip
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention-days }}
+
+  linux:
+    name: Linux (x64)
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+      - run: flutter pub get
+      - run: flutter build linux --release
+      - name: Package Linux build
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          mkdir -p dist
+          version="${VERSION//\//-}"
+          tar -C build/linux/x64/release/bundle \
+              -czf "dist/mf4_viewer-${version}-linux-x64.tar.gz" .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mf4_viewer-linux
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention-days }}
