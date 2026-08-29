@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+import '../convert/frame_builder.dart';
 import '../dbc/dbc_model.dart';
 import '../dbc/dbc_parser.dart';
 import '../decode/can_decoder.dart';
@@ -9,7 +10,7 @@ import '../decode/signal_series.dart';
 import '../mdf/mdf4_reader.dart';
 import 'plot_config.dart';
 
-/// Result of parsing a file, returned from the background isolate.
+/// Result of parsing one or more files, returned from the background isolate.
 class _LoadResult {
   final CanFrameTable frames;
   final DbcDatabase? db;
@@ -18,19 +19,30 @@ class _LoadResult {
   _LoadResult(this.frames, this.db, this.dbcName, this.version);
 }
 
-_LoadResult _parseInIsolate(Uint8List bytes) {
-  final reader = Mdf4Reader.fromBytes(bytes);
-  final frames = reader.readCanFrames();
-  DbcDatabase? db;
-  String? dbcName;
-  for (final att in reader.attachments()) {
-    if (att.key.toLowerCase().endsWith('.dbc')) {
-      db = DbcParser.parse(utf8.decode(att.value, allowMalformed: true));
-      dbcName = att.key;
-      break;
+/// Parse every given MF4 file, merge their frame streams (sorted by time)
+/// and merge every embedded `.dbc` database into one decoding database.
+_LoadResult _parseInIsolate(List<Uint8List> files) {
+  final tables = <CanFrameTable>[];
+  final dbs = <DbcDatabase>[];
+  final dbcNames = <String>{};
+  final versions = <String>{};
+  for (final bytes in files) {
+    final reader = Mdf4Reader.fromBytes(bytes);
+    tables.add(reader.readCanFrames());
+    versions.add(reader.version);
+    for (final att in reader.attachments()) {
+      if (att.key.toLowerCase().endsWith('.dbc')) {
+        dbs.add(DbcParser.parse(utf8.decode(att.value, allowMalformed: true)));
+        dbcNames.add(att.key);
+      }
     }
   }
-  return _LoadResult(frames, db, dbcName, reader.version);
+  return _LoadResult(
+    FrameBuilder.merge(tables),
+    dbs.isEmpty ? null : DbcDatabase.merge(dbs),
+    dbcNames.isEmpty ? null : dbcNames.join(', '),
+    versions.join(', '),
+  );
 }
 
 /// Central application state. Holds the loaded log, the decoder, the cached
@@ -61,12 +73,19 @@ class AppState extends ChangeNotifier {
 
   DecodableSignal? signalByName(String name) => _signalIndex[name];
 
-  Future<void> loadFile(Uint8List bytes, String name) async {
+  Future<void> loadFile(Uint8List bytes, String name) =>
+      loadFiles([bytes], [name]);
+
+  /// Load one or more MF4 files at once. Frames from all files are merged
+  /// into a single time-sorted stream and every embedded DBC contributes to
+  /// the decoding database, so signals from all files plot together.
+  Future<void> loadFiles(List<Uint8List> files, List<String> names) async {
+    if (files.isEmpty) return;
     loading = true;
     error = null;
     notifyListeners();
     try {
-      final result = await compute(_parseInIsolate, bytes);
+      final result = await compute(_parseInIsolate, files);
       if (result.db == null) {
         throw const FormatException(
             'No DBC database is embedded in this file. Load a .dbc to decode.');
@@ -75,7 +94,9 @@ class AppState extends ChangeNotifier {
       _signals = _decoder!.availableSignals();
       _signalIndex = {for (final s in _signals) s.qualifiedName: s};
       _seriesCache.clear();
-      fileName = name;
+      fileName = names.length == 1
+          ? names.first
+          : '${names.first} (+${names.length - 1} more)';
       dbcName = result.dbcName;
       mdfVersion = result.version;
 

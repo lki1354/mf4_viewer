@@ -124,7 +124,7 @@ class _HomePageState extends State<HomePage> {
         onPressed: () => _openConverter(context),
       ),
       IconButton(
-        tooltip: 'Open MF4 file',
+        tooltip: 'Open MF4 file(s) — select several to plot them together',
         icon: const Icon(Icons.folder_open),
         onPressed: () => _openFile(context),
       ),
@@ -200,7 +200,8 @@ class _HomePageState extends State<HomePage> {
                 style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: 8),
             Text(
-              'Open an ASAM MDF4 (.mf4) CAN trace log to plot signals.\n'
+              'Open one or more ASAM MDF4 (.mf4) CAN trace logs to plot '
+              'signals — multiple files are merged onto one timeline.\n'
               'Signals are decoded with the embedded DBC; enumerations are '
               'shown as text.',
               textAlign: TextAlign.center,
@@ -210,7 +211,7 @@ class _HomePageState extends State<HomePage> {
             FilledButton.icon(
               onPressed: () => _openFile(context),
               icon: const Icon(Icons.folder_open),
-              label: const Text('Open MF4 file'),
+              label: const Text('Open MF4 file(s)'),
             ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
@@ -240,17 +241,24 @@ class _HomePageState extends State<HomePage> {
     final result = await FilePicker.platform.pickFiles(
       withData: true,
       type: FileType.any,
+      allowMultiple: true,
     );
     if (result == null || result.files.isEmpty) return;
-    final f = result.files.first;
-    Uint8List? bytes = f.bytes;
-    if (bytes == null && f.path != null) {
-      // On some desktop platforms bytes is null; read via dart:io path.
-      bytes = await _readPath(f.path!);
+    final bytesList = <Uint8List>[];
+    final names = <String>[];
+    for (final f in result.files) {
+      Uint8List? bytes = f.bytes;
+      if (bytes == null && f.path != null) {
+        // On some desktop platforms bytes is null; read via dart:io path.
+        bytes = await _readPath(f.path!);
+      }
+      if (bytes == null) continue;
+      bytesList.add(bytes);
+      names.add(f.name);
     }
-    if (bytes == null) return;
+    if (bytesList.isEmpty) return;
     if (!context.mounted) return;
-    await context.read<AppState>().loadFile(bytes, f.name);
+    await context.read<AppState>().loadFiles(bytesList, names);
   }
 
   Future<Uint8List?> _readPath(String path) async {

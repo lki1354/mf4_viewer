@@ -38,6 +38,25 @@ class FrameBuilder {
     _data.add(Uint8List.fromList(data));
   }
 
+  /// Merge several frame tables into a single table, re-sorted by timestamp.
+  /// Used to combine multiple logs (e.g. several MF4 files) into one stream.
+  static CanFrameTable merge(List<CanFrameTable> tables) {
+    if (tables.length == 1) return tables.first;
+    final fb = FrameBuilder();
+    for (final t in tables) {
+      for (var i = 0; i < t.count; i++) {
+        fb.add(
+          time: t.time[i],
+          id: t.id[i],
+          extended: t.ide[i] != 0,
+          data: t.dataBytesView(i),
+          dlc: t.length[i],
+        );
+      }
+    }
+    return fb.build();
+  }
+
   /// Materialise the accumulated frames.
   ///
   /// Frames are sorted by timestamp (a requirement for a well-formed MDF master

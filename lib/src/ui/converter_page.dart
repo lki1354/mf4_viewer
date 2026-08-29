@@ -8,9 +8,11 @@ import 'package:provider/provider.dart';
 import '../convert/converter.dart';
 import '../model/app_state.dart';
 
-/// A self-contained screen that converts a CAN log (BLF / TRC / ASC / CSV /
-/// MDF) to an ASAM MDF4 (`.mf4`) file, optionally embedding a DBC or ARXML
-/// database. The converted file can be saved and/or plotted straight away.
+/// A self-contained screen that converts one or more CAN logs (BLF / TRC /
+/// ASC / CSV / MDF) to a single ASAM MDF4 (`.mf4`) file, optionally embedding
+/// DBC or ARXML databases. Selecting several inputs merges them onto one
+/// timeline — which also makes this the "combine multiple MF4 files" tool.
+/// The converted file can be saved and/or plotted straight away.
 class ConverterPage extends StatefulWidget {
   const ConverterPage({super.key});
 
@@ -25,8 +27,8 @@ class _PickedFile {
 }
 
 class _ConverterPageState extends State<ConverterPage> {
-  _PickedFile? _log;
-  _PickedFile? _db;
+  final List<_PickedFile> _logs = [];
+  final List<_PickedFile> _dbs = [];
   bool _busy = false;
   String? _status;
   bool _error = false;
@@ -47,38 +49,45 @@ class _ConverterPageState extends State<ConverterPage> {
             padding: const EdgeInsets.all(24),
             children: [
               Text(
-                'Convert a CAN log to ASAM MDF4',
+                'Convert CAN logs to ASAM MDF4',
                 style: theme.textTheme.headlineSmall,
               ),
               const SizedBox(height: 8),
               Text(
                 'Input formats: BLF, TRC, ASC (PCAN/Vector ASCII), CSV and '
-                'MDF/MF4. Attach a DBC or ARXML database to embed it in the '
-                'output so the trace is self-describing — then plot it straight '
-                'away.',
+                'MDF/MF4. Select several logs to merge them into one MF4 — '
+                'e.g. to combine multiple MF4 files. Attach one or more DBC '
+                'or ARXML databases to embed them in the output so the trace '
+                'is self-describing — then plot it straight away.',
                 style: theme.textTheme.bodyMedium,
               ),
               const SizedBox(height: 24),
-              _fileTile(
-                label: 'CAN log',
-                file: _log,
-                hint: 'Pick a .blf / .trc / .asc / .csv / .mf4 file',
+              _filesSection(
+                label: _logs.length > 1 ? 'CAN logs (merged)' : 'CAN log(s)',
+                files: _logs,
+                hint: 'Add .blf / .trc / .asc / .csv / .mf4 files',
                 icon: Icons.timeline,
-                onPick: _pickLog,
-                onClear: () => setState(() => _log = null),
+                onAdd: _pickLogs,
+                onRemove: (f) => setState(() {
+                  _logs.remove(f);
+                  _invalidateResult();
+                }),
               ),
               const SizedBox(height: 12),
-              _fileTile(
-                label: 'Database (optional)',
-                file: _db,
-                hint: 'Pick a .dbc / .arxml file',
+              _filesSection(
+                label: 'Databases (optional)',
+                files: _dbs,
+                hint: 'Add .dbc / .arxml files',
                 icon: Icons.menu_book,
-                onPick: _pickDb,
-                onClear: () => setState(() => _db = null),
+                onAdd: _pickDbs,
+                onRemove: (f) => setState(() {
+                  _dbs.remove(f);
+                  _invalidateResult();
+                }),
               ),
               const SizedBox(height: 24),
               FilledButton.icon(
-                onPressed: _log == null || _busy ? null : _convert,
+                onPressed: _logs.isEmpty || _busy ? null : _convert,
                 icon: _busy
                     ? const SizedBox(
                         width: 18,
@@ -86,7 +95,11 @@ class _ConverterPageState extends State<ConverterPage> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.transform),
-                label: Text(_busy ? 'Converting…' : 'Convert & save MF4'),
+                label: Text(_busy
+                    ? 'Converting…'
+                    : _logs.length > 1
+                        ? 'Combine & save MF4'
+                        : 'Convert & save MF4'),
               ),
               if (_convertedBytes != null) ...[
                 const SizedBox(height: 12),
@@ -115,82 +128,111 @@ class _ConverterPageState extends State<ConverterPage> {
     );
   }
 
-  Widget _fileTile({
+  Widget _filesSection({
     required String label,
-    required _PickedFile? file,
+    required List<_PickedFile> files,
     required String hint,
     required IconData icon,
-    required VoidCallback onPick,
-    required VoidCallback onClear,
+    required VoidCallback onAdd,
+    required void Function(_PickedFile) onRemove,
   }) {
     return Card(
-      child: ListTile(
-        leading: Icon(icon),
-        title: Text(file?.name ?? label),
-        subtitle: Text(file == null
-            ? hint
-            : '${(file.bytes.length / 1024).toStringAsFixed(1)} KiB'),
-        trailing: file == null
-            ? const Icon(Icons.add)
-            : IconButton(icon: const Icon(Icons.clear), onPressed: onClear),
-        onTap: onPick,
+      child: Column(
+        children: [
+          for (final f in files)
+            ListTile(
+              leading: Icon(icon),
+              title: Text(f.name),
+              subtitle:
+                  Text('${(f.bytes.length / 1024).toStringAsFixed(1)} KiB'),
+              trailing: IconButton(
+                icon: const Icon(Icons.clear),
+                onPressed: () => onRemove(f),
+              ),
+            ),
+          ListTile(
+            leading: files.isEmpty ? Icon(icon) : null,
+            title: Text(files.isEmpty ? label : 'Add more…'),
+            subtitle: files.isEmpty ? Text(hint) : null,
+            trailing: const Icon(Icons.add),
+            onTap: onAdd,
+          ),
+        ],
       ),
     );
   }
 
-  Future<_PickedFile?> _pick(List<String>? extensions) async {
+  Future<List<_PickedFile>> _pick(List<String>? extensions) async {
     final result = await FilePicker.platform.pickFiles(
       withData: true,
       type: extensions == null ? FileType.any : FileType.custom,
       allowedExtensions: extensions,
+      allowMultiple: true,
     );
-    if (result == null || result.files.isEmpty) return null;
-    final f = result.files.first;
-    var bytes = f.bytes;
-    if (bytes == null && f.path != null) {
-      try {
-        bytes = await File(f.path!).readAsBytes();
-      } catch (_) {
-        return null;
+    if (result == null) return const [];
+    final out = <_PickedFile>[];
+    for (final f in result.files) {
+      var bytes = f.bytes;
+      if (bytes == null && f.path != null) {
+        try {
+          bytes = await File(f.path!).readAsBytes();
+        } catch (_) {
+          continue;
+        }
       }
+      if (bytes == null) continue;
+      out.add(_PickedFile(f.name, bytes));
     }
-    if (bytes == null) return null;
-    return _PickedFile(f.name, bytes);
+    return out;
   }
 
-  Future<void> _pickLog() async {
+  Future<void> _pickLogs() async {
     final picked = await _pick(
         ['blf', 'trc', 'asc', 'csv', 'txt', 'log', 'mf4', 'mdf']);
-    if (picked != null) {
-      setState(() {
-        _log = picked;
-        // A new input invalidates any previously converted result.
-        _convertedBytes = null;
-        _convertedName = null;
-      });
+    if (picked.isEmpty) return;
+    setState(() {
+      _addAll(_logs, picked);
+      // A new input invalidates any previously converted result.
+      _invalidateResult();
+    });
+  }
+
+  Future<void> _pickDbs() async {
+    final picked = await _pick(['dbc', 'arxml', 'xml']);
+    if (picked.isEmpty) return;
+    setState(() {
+      _addAll(_dbs, picked);
+      _invalidateResult();
+    });
+  }
+
+  /// Append [picked] to [target], skipping files already in the list.
+  static void _addAll(List<_PickedFile> target, List<_PickedFile> picked) {
+    for (final p in picked) {
+      if (target.any((f) => f.name == p.name)) continue;
+      target.add(p);
     }
   }
 
-  Future<void> _pickDb() async {
-    final picked = await _pick(['dbc', 'arxml', 'xml']);
-    if (picked != null) setState(() => _db = picked);
+  void _invalidateResult() {
+    _convertedBytes = null;
+    _convertedName = null;
   }
 
   Future<void> _convert() async {
-    final log = _log;
-    if (log == null) return;
+    if (_logs.isEmpty) return;
     setState(() {
       _busy = true;
       _status = null;
     });
     try {
-      final result = CanConverter.convertBytes(
-        logBytes: log.bytes,
-        logName: log.name,
-        dbBytes: _db?.bytes,
-        dbName: _db?.name,
+      final result = CanConverter.convertMany(
+        logs: [for (final f in _logs) NamedBytes(f.name, f.bytes)],
+        databases: [for (final f in _dbs) NamedBytes(f.name, f.bytes)],
       );
-      final outName = '${_stem(log.name)}.mf4';
+      final outName = _logs.length == 1
+          ? '${_stem(_logs.first.name)}.mf4'
+          : '${_stem(_logs.first.name)}_combined.mf4';
       final path = await FilePicker.platform.saveFile(
         dialogTitle: 'Save converted MF4',
         fileName: outName,
@@ -215,8 +257,7 @@ class _ConverterPageState extends State<ConverterPage> {
       if (!mounted) return;
       setState(() {
         _error = true;
-        _convertedBytes = null;
-        _convertedName = null;
+        _invalidateResult();
         _status = 'Conversion failed: $e';
       });
     } finally {

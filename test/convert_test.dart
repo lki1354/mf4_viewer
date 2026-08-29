@@ -260,6 +260,99 @@ void main() {
       expect(DbcParser.parse(utf8.decode(dbcAtt.value)).messages, hasLength(1));
     });
 
+    test('multiple DBC databases are all embedded and both decode', () {
+      final csv = utf8.encode('Time,ID,DLC,Data\n'
+          '0.000,0x123,8,01 02 03 04 05 06 07 08\n'
+          '0.010,0x200,2,AA BB\n');
+      const dbcA = 'BO_ 291 Demo: 8 ECU\n'
+          ' SG_ Counter : 0|8@1+ (1,0) [0|255] "" Vector__XXX\n';
+      const dbcB = 'BO_ 512 Other: 2 ECU\n'
+          ' SG_ Level : 0|8@1+ (1,0) [0|255] "" Vector__XXX\n';
+
+      final result = CanConverter.convertMany(
+        logs: [NamedBytes('demo.csv', Uint8List.fromList(csv))],
+        databases: [
+          NamedBytes('a.dbc', Uint8List.fromList(utf8.encode(dbcA))),
+          NamedBytes('b.dbc', Uint8List.fromList(utf8.encode(dbcB))),
+        ],
+      );
+      expect(result.databaseNames, ['a.dbc', 'b.dbc']);
+      expect(result.messageCount, 2);
+
+      final atts = Mdf4Reader.fromBytes(result.mf4Bytes).attachments();
+      expect(atts.map((e) => e.key), containsAll(['a.dbc', 'b.dbc']));
+
+      final merged = DbcDatabase.merge([
+        for (final a in atts) DbcParser.parse(utf8.decode(a.value)),
+      ]);
+      expect(merged.messageForId(0x123)!.name, 'Demo');
+      expect(merged.messageForId(0x200)!.name, 'Other');
+    });
+
+    test('combining multiple MF4 files merges frames and carries DBCs', () {
+      ConversionResult part(String dbcName, String dbc, double t, int id) {
+        final fb = FrameBuilder()
+          ..add(time: t, id: id, extended: false, data: [1, 2]);
+        final mf4 = Mf4Writer.write(fb.build(), attachments: [
+          Mf4Attachment(
+            fileName: dbcName,
+            data: Uint8List.fromList(utf8.encode(dbc)),
+          ),
+        ]);
+        return CanConverter.convertMany(
+            logs: [NamedBytes('$dbcName.mf4', mf4)]);
+      }
+
+      const dbcA = 'BO_ 256 MsgA: 2 ECU\n'
+          ' SG_ SigA : 0|8@1+ (1,0) [0|255] "" Vector__XXX\n';
+      const dbcB = 'BO_ 512 MsgB: 2 ECU\n'
+          ' SG_ SigB : 0|8@1+ (1,0) [0|255] "" Vector__XXX\n';
+      final a = part('a.dbc', dbcA, 5.0, 0x100).mf4Bytes;
+      final b = part('b.dbc', dbcB, 1.0, 0x200).mf4Bytes;
+
+      final combined = CanConverter.convertMany(logs: [
+        NamedBytes('a.mf4', a),
+        NamedBytes('b.mf4', b),
+      ]);
+      expect(combined.inputCount, 2);
+      expect(combined.frameCount, 2);
+      expect(combined.databaseNames, containsAll(['a.dbc', 'b.dbc']));
+      expect(combined.messageCount, 2);
+
+      final reread = Mdf4Reader.fromBytes(combined.mf4Bytes);
+      final frames = reread.readCanFrames();
+      // Frames from both files, re-sorted by timestamp.
+      expect(frames.count, 2);
+      expect(frames.time[0], closeTo(1.0, 1e-9));
+      expect(frames.id[0], 0x200);
+      expect(frames.time[1], closeTo(5.0, 1e-9));
+      expect(frames.id[1], 0x100);
+      expect(reread.attachments(), hasLength(2));
+    });
+
+    test('duplicate embedded databases are deduplicated; clashes renamed', () {
+      const dbc = 'BO_ 256 MsgA: 2 ECU\n'
+          ' SG_ SigA : 0|8@1+ (1,0) [0|255] "" Vector__XXX\n';
+      const dbcOther = 'BO_ 512 MsgB: 2 ECU\n'
+          ' SG_ SigB : 0|8@1+ (1,0) [0|255] "" Vector__XXX\n';
+      final db = Uint8List.fromList(utf8.encode(dbc));
+      final dbOther = Uint8List.fromList(utf8.encode(dbcOther));
+      final fb = FrameBuilder()
+        ..add(time: 0, id: 0x100, extended: false, data: [1]);
+      final mf4 = Mf4Writer.write(fb.build(), attachments: [
+        Mf4Attachment(fileName: 'net.dbc', data: db),
+      ]);
+
+      // The same database again (same name + content) is embedded once; a
+      // different database under the same name gets a suffixed name.
+      final result = CanConverter.convertMany(
+        logs: [NamedBytes('a.mf4', mf4), NamedBytes('b.mf4', mf4)],
+        databases: [NamedBytes('net.dbc', dbOther)],
+      );
+      expect(result.databaseNames, ['net.dbc', 'net_2.dbc']);
+      expect(result.messageCount, 2);
+    });
+
     test('format detection by extension', () {
       expect(CanConverter.detectLogFormat('a.blf'), LogFormat.blf);
       expect(CanConverter.detectLogFormat('a.trc'), LogFormat.trc);
