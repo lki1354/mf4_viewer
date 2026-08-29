@@ -7,6 +7,7 @@ import '../dbc/dbc_parser.dart';
 import '../dbc/dbc_writer.dart';
 import '../mdf/mdf4_reader.dart';
 import 'arxml_parser.dart';
+import 'frame_builder.dart';
 import 'mf4_writer.dart';
 import 'readers/asc_reader.dart';
 import 'readers/blf_reader.dart';
@@ -19,28 +20,47 @@ enum LogFormat { blf, trc, asc, csv, mf4 }
 /// Supported database description input formats.
 enum DbFormat { dbc, arxml }
 
+/// An in-memory input file: its (display) name plus raw content.
+class NamedBytes {
+  final String name;
+  final Uint8List bytes;
+
+  const NamedBytes(this.name, this.bytes);
+}
+
 /// Outcome of a conversion: the MF4 bytes plus a short summary.
 class ConversionResult {
   final Uint8List mf4Bytes;
   final int frameCount;
-  final LogFormat inputFormat;
-  final String? databaseName;
+  final int inputCount;
+  final List<LogFormat> inputFormats;
+  final List<String> databaseNames;
   final int messageCount;
 
   ConversionResult({
     required this.mf4Bytes,
     required this.frameCount,
-    required this.inputFormat,
-    required this.databaseName,
+    required this.inputCount,
+    required this.inputFormats,
+    required this.databaseNames,
     required this.messageCount,
   });
 
+  LogFormat get inputFormat => inputFormats.first;
+
+  String? get databaseName =>
+      databaseNames.isEmpty ? null : databaseNames.join(', ');
+
   String summary() {
-    final db = databaseName == null
+    final fmts = inputFormats
+        .map((f) => f.name.toUpperCase())
+        .toSet()
+        .join('+');
+    final files = inputCount == 1 ? '' : ' ($inputCount files merged)';
+    final db = databaseNames.isEmpty
         ? 'no database'
-        : '$databaseName ($messageCount messages)';
-    return '${inputFormat.name.toUpperCase()} → MF4: '
-        '$frameCount frames, $db.';
+        : '${databaseNames.join(', ')} ($messageCount messages)';
+    return '$fmts → MF4$files: $frameCount frames, $db.';
   }
 }
 
@@ -142,20 +162,88 @@ class CanConverter {
     required String logName,
     Uint8List? dbBytes,
     String? dbName,
-    LogFormat? logFormat,
   }) {
-    final fmt = logFormat ?? detectLogFormat(logName);
-    final frames = readFrames(logBytes, logName, format: fmt);
+    return convertMany(
+      logs: [NamedBytes(logName, logBytes)],
+      databases: [
+        if (dbBytes != null && dbName != null) NamedBytes(dbName, dbBytes),
+      ],
+    );
+  }
 
-    LoadedDatabase? db;
-    if (dbBytes != null && dbName != null) {
-      db = loadDatabase(dbBytes, dbName);
+  /// Convert (and merge) one or more in-memory logs to a single MF4.
+  ///
+  /// Each log may be any supported [LogFormat]; frames from all inputs are
+  /// concatenated and re-sorted by timestamp, so this doubles as the
+  /// "combine multiple MF4 files" path. Databases work as follows:
+  ///
+  /// * every file in [databases] (DBC or ARXML) is embedded in the output;
+  /// * `.dbc` attachments already embedded in MF4 inputs are carried over,
+  ///   so combining self-describing MF4 files stays self-describing.
+  ///
+  /// Databases with identical content are embedded once; a name clash
+  /// between different databases gets a numeric suffix.
+  static ConversionResult convertMany({
+    required List<NamedBytes> logs,
+    List<NamedBytes> databases = const [],
+  }) {
+    if (logs.isEmpty) {
+      throw ArgumentError('At least one input log is required.');
+    }
+
+    final tables = <CanFrameTable>[];
+    final formats = <LogFormat>[];
+    final carried = <NamedBytes>[];
+    for (final log in logs) {
+      final fmt = detectLogFormat(log.name);
+      formats.add(fmt);
+      tables.add(readFrames(log.bytes, log.name, format: fmt));
+      if (fmt == LogFormat.mf4) {
+        for (final att in Mdf4Reader.fromBytes(log.bytes).attachments()) {
+          if (att.key.toLowerCase().endsWith('.dbc')) {
+            carried.add(NamedBytes(att.key, att.value));
+          }
+        }
+      }
+    }
+    final frames = FrameBuilder.merge(tables);
+
+    // Explicitly supplied databases take priority over carried-over ones.
+    final loaded = <LoadedDatabase>[
+      for (final db in databases) loadDatabase(db.bytes, db.name),
+    ];
+    for (final c in carried) {
+      try {
+        final text = utf8.decode(c.bytes, allowMalformed: true);
+        loaded.add(LoadedDatabase(
+          database: DbcParser.parse(text),
+          dbcText: text,
+          fileName: c.name,
+        ));
+      } on FormatException {
+        // An unreadable embedded database is dropped rather than failing the
+        // whole conversion.
+      }
     }
 
     final attachments = <Mf4Attachment>[];
-    if (db != null) {
+    final embedded = <String, String>{}; // attachment name -> DBC text
+    final kept = <DbcDatabase>[];
+    for (final db in loaded) {
+      if (embedded.containsValue(db.dbcText)) continue; // duplicate content
+      var name = _basename(db.fileName);
+      if (embedded.containsKey(name)) {
+        final stem = _stem(name);
+        var i = 2;
+        while (embedded.containsKey('${stem}_$i.dbc')) {
+          i++;
+        }
+        name = '${stem}_$i.dbc';
+      }
+      embedded[name] = db.dbcText;
+      kept.add(db.database);
       attachments.add(Mf4Attachment(
-        fileName: db.fileName,
+        fileName: name,
         data: Uint8List.fromList(utf8.encode(db.dbcText)),
       ));
     }
@@ -165,29 +253,40 @@ class CanConverter {
     return ConversionResult(
       mf4Bytes: mf4,
       frameCount: frames.count,
-      inputFormat: fmt,
-      databaseName: db?.fileName,
-      messageCount: db?.database.messages.length ?? 0,
+      inputCount: logs.length,
+      inputFormats: formats,
+      databaseNames: embedded.keys.toList(),
+      messageCount: DbcDatabase.merge(kept).messages.length,
     );
   }
 
-  /// Convert a log file on disk to an MF4 file on disk. Returns the result
-  /// (the MF4 bytes have already been written to [outputPath]).
+  /// Convert (and merge) log files on disk to an MF4 file on disk. Returns
+  /// the result (the MF4 bytes have already been written to [outputPath]).
   static ConversionResult convertFile({
     required String inputPath,
     required String outputPath,
     String? databasePath,
+  }) =>
+      convertFiles(
+        inputPaths: [inputPath],
+        outputPath: outputPath,
+        databasePaths: [if (databasePath != null) databasePath],
+      );
+
+  /// Multi-input variant of [convertFile]: merges every input log and embeds
+  /// every database.
+  static ConversionResult convertFiles({
+    required List<String> inputPaths,
+    required String outputPath,
+    List<String> databasePaths = const [],
   }) {
-    final logBytes = File(inputPath).readAsBytesSync();
-    Uint8List? dbBytes;
-    if (databasePath != null) {
-      dbBytes = File(databasePath).readAsBytesSync();
-    }
-    final result = convertBytes(
-      logBytes: logBytes,
-      logName: inputPath,
-      dbBytes: dbBytes,
-      dbName: databasePath,
+    final result = convertMany(
+      logs: [
+        for (final p in inputPaths) NamedBytes(p, File(p).readAsBytesSync()),
+      ],
+      databases: [
+        for (final p in databasePaths) NamedBytes(p, File(p).readAsBytesSync()),
+      ],
     );
     File(outputPath).writeAsBytesSync(result.mf4Bytes);
     return result;
@@ -199,8 +298,11 @@ class CanConverter {
     return name.substring(dot + 1).toLowerCase();
   }
 
+  static String _basename(String name) =>
+      name.split(Platform.pathSeparator).last.split('/').last;
+
   static String _stem(String name) {
-    final base = name.split(Platform.pathSeparator).last.split('/').last;
+    final base = _basename(name);
     final dot = base.lastIndexOf('.');
     return dot < 0 ? base : base.substring(0, dot);
   }

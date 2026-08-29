@@ -108,4 +108,18 @@ class DbcDatabase {
   DbcDatabase(this.messages) : byId = {for (final m in messages) m.id: m};
 
   DbcMessage? messageForId(int arbitrationId) => byId[arbitrationId];
+
+  /// Merge several databases into one. Messages are deduplicated by
+  /// arbitration id — the first database defining an id wins, so callers
+  /// should pass databases in priority order.
+  static DbcDatabase merge(Iterable<DbcDatabase> databases) {
+    final seen = <int>{};
+    final messages = <DbcMessage>[];
+    for (final db in databases) {
+      for (final m in db.messages) {
+        if (seen.add(m.id)) messages.add(m);
+      }
+    }
+    return DbcDatabase(messages);
+  }
 }

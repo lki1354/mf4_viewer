@@ -11,11 +11,14 @@ single Flutter codebase on **Android, Windows and Linux**.
 Bring CAN logs from common tools into the self-describing MDF4 format:
 
 - **Inputs:** Vector **BLF**, PEAK **TRC**, PEAK/Vector **ASC** (ASCII trace),
-  generic **CSV**, and existing **MDF/MF4** files.
-- **Database (optional):** a **DBC** or AUTOSAR **ARXML** description. When
-  supplied it is embedded in the output `.mf4` (ARXML is converted to DBC
-  first), so the resulting trace can be decoded by this viewer and other
-  DBC-based tooling.
+  generic **CSV**, and existing **MDF/MF4** files. **Several inputs at once**
+  are merged onto one time-sorted stream — which is also how you **combine
+  multiple MF4 files into one**.
+- **Databases (optional):** one or more **DBC** or AUTOSAR **ARXML**
+  descriptions. Each one is embedded in the output `.mf4` (ARXML is converted
+  to DBC first), so the resulting trace can be decoded by this viewer and
+  other DBC-based tooling. Databases already embedded in MF4 inputs are
+  carried over automatically (identical duplicates are embedded once).
 - **Output:** a valid MDF 4.10 bus-logging file with the standard
   `CAN_DataFrame.*` channels.
 
@@ -25,20 +28,25 @@ unit-tested in isolation and reusable from a CLI.
 ### In the app
 
 Tap the **convert** (⇄) action in the toolbar (or **Convert a log to MF4** on
-the welcome screen), pick a log and an optional database, and save the `.mf4`.
-After a successful conversion the **Plot converted file** button loads the new
-trace straight into the viewer (attach a DBC/ARXML so its signals can be
-decoded).
+the welcome screen), pick one or more logs and any number of optional
+databases, and save the `.mf4`. Picking several logs merges them into a single
+combined MF4. After a successful conversion the **Plot converted file** button
+loads the new trace straight into the viewer (attach a DBC/ARXML so its
+signals can be decoded).
 
 ### From the command line
 
 ```bash
-dart run tool/convert.dart <input.{blf,trc,asc,csv,mf4}> <output.mf4> \
-    [--db <database.{dbc,arxml}>]
+dart run tool/convert.dart <input.{blf,trc,asc,csv,mf4}> [<input2> ...] \
+    <output.mf4> [--db <database.{dbc,arxml}>]...
 
 # e.g.
 dart run tool/convert.dart drive.blf drive.mf4 --db vehicle.dbc
 dart run tool/convert.dart capture.csv capture.mf4 --db ecu_extract.arxml
+# embed several databases at once
+dart run tool/convert.dart drive.blf drive.mf4 --db body.dbc --db chassis.dbc
+# combine multiple MF4 files into one (embedded DBCs are carried over)
+dart run tool/convert.dart part1.mf4 part2.mf4 part3.mf4 combined.mf4
 ```
 
 #### CSV input format
@@ -222,7 +230,9 @@ flutter run \
 
 ## Usage
 
-1. Tap **Open MF4 file** and choose a `.mf4` CAN trace.
+1. Tap **Open MF4 file(s)** and choose one or more `.mf4` CAN traces —
+   selecting several merges them onto one timeline so their signals plot
+   together.
 2. Tap a graph's header to make it the *target*, then pick signals from the
    left panel (search by name or message).
 3. Tap a legend chip to configure a signal (axis, colour, stepped, width).
