@@ -126,3 +126,21 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
   install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
+
+# Application icon: `data/icon.png` is loaded by the runner for the window and
+# taskbar entry, `data/icons/hicolor/` is what packaging/install.sh copies into
+# the user's icon theme so the .desktop launcher has an icon too.
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/runner/resources/mf4_viewer.png"
+  DESTINATION "${INSTALL_BUNDLE_DATA_DIR}" RENAME "icon.png" COMPONENT Runtime)
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/runner/resources/icons"
+  DESTINATION "${INSTALL_BUNDLE_DATA_DIR}" COMPONENT Runtime)
+
+# Desktop integration: the .desktop entry ships in data/, the install and
+# uninstall helpers at the bundle root so they are found after extracting.
+install(FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/packaging/${APPLICATION_ID}.desktop"
+  DESTINATION "${INSTALL_BUNDLE_DATA_DIR}" COMPONENT Runtime)
+install(PROGRAMS
+    "${CMAKE_CURRENT_SOURCE_DIR}/packaging/install.sh"
+    "${CMAKE_CURRENT_SOURCE_DIR}/packaging/uninstall.sh"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}" COMPONENT Runtime)

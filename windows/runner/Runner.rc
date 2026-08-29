@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.mf4viewer" "\0"
-            VALUE "FileDescription", "mf4_viewer" "\0"
+            VALUE "CompanyName", "Lukas Riegler" "\0"
+            VALUE "FileDescription", "MF4 Viewer - ASAM MDF4 CAN trace viewer and converter" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "mf4_viewer" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.mf4viewer. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Lukas Riegler. MIT licensed." "\0"
             VALUE "OriginalFilename", "mf4_viewer.exe" "\0"
-            VALUE "ProductName", "mf4_viewer" "\0"
+            VALUE "ProductName", "MF4 Viewer" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

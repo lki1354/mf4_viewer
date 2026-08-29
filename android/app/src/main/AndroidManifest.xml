@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="mf4_viewer"
+        android:label="MF4 Viewer"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

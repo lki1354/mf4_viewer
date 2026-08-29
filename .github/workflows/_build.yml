@@ -7,8 +7,8 @@ name: Build
 #   * test    — `flutter analyze` + `flutter test`. Every build job depends on
 #               it passing.
 #   * android — release APK + Play Store App Bundle (.aab)
-#   * windows — zipped Windows x64 build (.exe + DLLs + data/)
-#   * linux   — tarred Linux x64 bundle
+#   * windows — portable zip (.exe + DLLs + data/) and an Inno Setup installer
+#   * linux   — tarred Linux x64 bundle with a desktop-integration installer
 #
 # Artifacts are uploaded to the calling run, where they can be downloaded from
 # the Summary page or picked up by a follow-up job (see `release.yml`).
@@ -90,20 +90,55 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: flutter build windows --release
-      - name: Package Windows build
+      - name: Package portable zip
         shell: pwsh
         env:
           VERSION: ${{ inputs.version }}
         run: |
-          $version = $env:VERSION -replace '/', '-'
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Compress-Archive `
-            -Path build/windows/x64/runner/Release/* `
-            -DestinationPath "dist/mf4_viewer-$version-windows-x64.zip"
+          $label = $env:VERSION -replace '/', '-'
+          $name = "mf4_viewer-$label-windows-x64"
+          # Stage into a folder first so the archive unpacks into one directory
+          # instead of scattering the DLLs into the user's current folder.
+          New-Item -ItemType Directory -Force -Path staging, dist | Out-Null
+          Copy-Item build/windows/x64/runner/Release "staging/$name" -Recurse
+          if (-not (Test-Path "staging/$name/mf4_viewer.exe")) {
+            throw "release build is missing mf4_viewer.exe"
+          }
+          Compress-Archive -Path "staging/$name" -DestinationPath "dist/$name.zip"
+      - name: Build installer
+        shell: pwsh
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --no-progress -y
+          }
+
+          $label = $env:VERSION -replace '/', '-'
+          # The installer needs a numeric version; take it from a version tag
+          # (v1.2.3) and fall back to pubspec.yaml for branch and PR builds.
+          $versionMatch = [regex]::Match($label, '\d+\.\d+\.\d+')
+          if ($versionMatch.Success) {
+            $appVersion = $versionMatch.Value
+          } else {
+            $appVersion = (Select-String -Path pubspec.yaml `
+              -Pattern '^version:\s*(\d+\.\d+\.\d+)').Matches[0].Groups[1].Value
+          }
+
+          & $iscc /Qp `
+            "/DMyAppVersion=$appVersion" `
+            "/DMyVersionInfo=$appVersion.0" `
+            "/DOutputDir=$PWD\dist" `
+            "/DOutputBaseFilename=mf4_viewer-$label-windows-x64-setup" `
+            windows\packaging\mf4_viewer.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:
           name: mf4_viewer-windows
-          path: dist/*.zip
+          path: |
+            dist/*.zip
+            dist/*.exe
           if-no-files-found: error
           retention-days: ${{ inputs.retention-days }}
 
@@ -127,10 +162,17 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
         run: |
+          label="${VERSION//\//-}"
+          name="mf4_viewer-${label}-linux-x64"
+          # Stage into a named folder so the tarball unpacks into one directory.
+          mkdir -p "staging/${name}"
+          cp -a build/linux/x64/release/bundle/. "staging/${name}/"
+          # Guard the desktop-integration files added by linux/CMakeLists.txt.
+          test -x "staging/${name}/install.sh"
+          test -f "staging/${name}/data/icon.png"
+          test -f "staging/${name}/data/com.mf4viewer.mf4_viewer.desktop"
           mkdir -p dist
-          version="${VERSION//\//-}"
-          tar -C build/linux/x64/release/bundle \
-              -czf "dist/mf4_viewer-${version}-linux-x64.tar.gz" .
+          tar -C staging -czf "dist/${name}.tar.gz" "${name}"
       - uses: actions/upload-artifact@v4
         with:
           name: mf4_viewer-linux

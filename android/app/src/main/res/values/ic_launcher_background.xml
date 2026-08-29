@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Indigo 900, the darker end of the app icon's gradient. -->
+    <color name="ic_launcher_background">#1A237E</color>
+</resources>

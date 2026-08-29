@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=MF4 Viewer
+GenericName=CAN Trace Viewer
+Comment=View ASAM MDF4 CAN traces and convert BLF, TRC, ASC and CSV logs to MF4
+# install.sh rewrites Exec with the absolute path of the installed binary.
+Exec=mf4-viewer
+Icon=com.mf4viewer.mf4_viewer
+Terminal=false
+StartupNotify=true
+Categories=Development;Engineering;Utility;
+Keywords=CAN;MDF4;MF4;BLF;TRC;ASC;DBC;trace;logging;
